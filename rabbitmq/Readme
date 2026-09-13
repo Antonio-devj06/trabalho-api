@@ -1,0 +1,310 @@
+# Trabalho Prático — API de Viagens
+
+O projeto foi desenvolvido utilizando **Python + FastAPI**, **PostgreSQL**, **NGINX**, **RabbitMQ** e **Docker**.
+
+
+## 1. Objetivo
+
+* **Opção A:** API Gateway com Rate Limit e Load Balancer;
+* **Opção B:** RabbitMQ com Producer, Consumers e duas filas com finalidades distintas.
+
+O recurso principal da aplicação é o gerenciamento de **Viagens**, disponibilizando operações de CRUD.
+
+
+## 2. Tecnologias utilizadas
+
+| Tecnologia     | Utilização                              |
+| -------------- | --------------------------------------- |
+| Python 3.12    | Linguagem principal                     |
+| FastAPI        | Desenvolvimento da API REST             |
+| SQLAlchemy     | ORM e acesso ao banco                   |
+| PostgreSQL 17  | Banco de dados relacional               |
+| RabbitMQ       | Mensageria assíncrona                   |
+| NGINX          | API Gateway, Rate Limit e Load Balancer |
+| Docker         | Containerização                         |
+| Docker Compose | Orquestração dos serviços               |
+| Pika           | Comunicação Python com RabbitMQ         |
+
+
+## 3. Arquitetura
+
+A aplicação possui uma arquitetura distribuída composta pelos seguintes serviços:
+
+                         CLIENTE
+                            |
+                            v
+                  +-------------------+
+                  |   API GATEWAY     |
+                  |      NGINX        |
+                  |                   |
+                  |  Rate Limit       |
+                  |  Load Balancer    |
+                  +---------+---------+
+                            |
+                 +----------+----------+
+                 |                     |
+                 v                     v
+          +-------------+       +-------------+
+          |   API 1     |       |   API 2     |
+          |  FastAPI    |       |  FastAPI    |
+          +------+------+       +------+------+
+                 |                     |
+                 +----------+----------+
+                            |
+                            v
+                    +---------------+
+                    |  PostgreSQL   |
+                    |   Database    |
+                    +---------------+
+
+                            |
+                            | Eventos
+                            v
+                    +---------------+
+                    |   RabbitMQ    |
+                    +-------+-------+
+                            |
+                 +----------+----------+
+                 |                     |
+                 v                     v
+        +----------------+    +----------------+
+        |    Consumer    |    |    Consumer    |
+        |    Auditoria   |    |   Notificação  |
+        +----------------+    +----------------+
+
+
+## 4 Criar viagem
+
+
+POST /viagens
+
+Exemplo:
+
+```json
+{
+  "destino": "São Paulo",
+  "motivo": "Reunião de trabalho",
+  "funcionario": "Antonio",
+  "status": "PLANEJADA"
+}
+```
+
+Ao criar uma viagem, a API:
+
+1. Persiste a viagem no PostgreSQL;
+2. Publica um evento na fila `fila_viagens`;
+3. Publica uma mensagem na fila `fila_notificacoes`.
+
+---
+
+# 5. Opção A — API Gateway, Rate Limit e Load Balancer
+
+Foi escolhida a **Opção A** do trabalho.
+
+O NGINX funciona como **API Gateway**, sendo o único ponto de entrada externo para as APIs.
+
+O cliente acessa:
+
+```text
+http://localhost:8080
+```
+
+As instâncias internas da API não ficam expostas diretamente ao computador do usuário.
+
+---
+
+### Teste
+
+```bash
+for i in {1..30}; do
+    curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/viagens
+done
+```
+
+As primeiras requisições são atendidas normalmente e, ao exceder o limite configurado, são retornados códigos `429`.
+
+
+# 6. Docker
+
+Todos os componentes da aplicação são executados em containers.
+
+Componentes:
+
+```text
+PostgreSQL
+RabbitMQ
+API 1
+API 2
+API Gateway
+Consumer Auditoria
+Consumer Notificação
+```
+
+Cada componente possui sua configuração de containerização através de Dockerfile ou imagem baseada em Dockerfile.
+
+---
+
+# 7. Como executar
+
+Na raiz do projeto:
+
+```bash
+docker compose up --build
+```
+
+Para executar em segundo plano:
+
+```bash
+docker compose up --build -d
+```
+
+Verificar os containers:
+
+```bash
+docker compose ps
+```
+
+---
+
+# 8. Acessos
+
+## API através do Gateway
+
+```text
+http://localhost:8080
+```
+
+## Documentação Swagger
+
+```text
+http://localhost:8080/docs
+```
+
+## RabbitMQ Management
+
+```text
+http://localhost:15672
+```
+
+Credenciais padrão:
+
+```text
+Usuário: guest
+Senha: guest
+```
+
+## PostgreSQL
+
+```text
+localhost:5432
+```
+
+---
+
+# 9. Testes
+
+## Listar viagens
+
+```bash
+curl http://localhost:8080/viagens
+```
+
+## Criar viagem
+
+```bash
+curl -X POST http://localhost:8080/viagens \
+-H "Content-Type: application/json" \
+-d '{
+  "destino": "São Paulo",
+  "motivo": "Reunião de trabalho",
+  "funcionario": "Antonio",
+  "status": "PLANEJADA"
+}'
+```
+
+## Buscar viagem
+
+```bash
+curl http://localhost:8080/viagens/1
+```
+
+## Atualizar viagem
+
+```bash
+curl -X PUT http://localhost:8080/viagens/1 \
+-H "Content-Type: application/json" \
+-d '{
+  "destino": "Curitiba",
+  "motivo": "Reunião",
+  "funcionario": "Antonio",
+  "status": "EM_ANDAMENTO"
+}'
+```
+
+## Excluir viagem
+
+```bash
+curl -X DELETE http://localhost:8080/viagens/1
+```
+
+---
+
+# 10. Teste do RabbitMQ
+
+Após criar uma viagem:
+
+```bash
+docker compose logs consumer_auditoria
+```
+
+e:
+
+```bash
+docker compose logs consumer_notificacao
+```
+
+Também é possível verificar as filas:
+
+```bash
+docker compose exec rabbitmq rabbitmqctl list_queues name messages consumers
+```
+
+As filas esperadas são:
+
+```text
+fila_viagens
+fila_notificacoes
+```
+
+---
+
+# 11. Teste do Rate Limit
+
+Executar:
+
+```bash
+for i in {1..30}; do
+    curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/viagens
+done
+```
+
+O resultado deve apresentar requisições `200` e, após atingir o limite configurado, respostas:
+
+```text
+429
+```
+
+Isso comprova o funcionamento do Rate Limit.
+
+---
+
+# 12. Conclusão
+
+O projeto implementa uma API REST para gerenciamento de viagens com persistência em PostgreSQL e arquitetura distribuída baseada em Docker.
+
+Foram implementadas as duas opções de arquitetura distribuída escolhidas:
+
+1. **API Gateway + Rate Limit + Load Balancer**, utilizando NGINX e duas instâncias da API;
+2. **RabbitMQ**, utilizando Producer, duas filas e dois Consumers com responsabilidades distintas.
+
+Toda a aplicação pode ser executada através do Docker Compose, permitindo reproduzir o ambiente de execução de forma padronizada.

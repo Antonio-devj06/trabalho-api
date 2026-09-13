@@ -1,0 +1,91 @@
+services:
+
+  postgres:
+    build: ./postgres
+    container_name: postgres_api
+
+    environment:
+      POSTGRES_DB: viagens
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+
+  api_1:
+    build: ./backend
+    container_name: fastapi_api_1
+
+    depends_on:
+      - postgres
+      - rabbitmq
+
+    env_file:
+      - ./backend/.env
+
+    expose:
+      - "8000"
+
+
+  api_2:
+    build: ./backend
+    container_name: fastapi_api_2
+
+    depends_on:
+      - postgres
+      - rabbitmq
+
+    env_file:
+      - ./backend/.env
+
+    expose:
+      - "8000"
+
+
+  rabbitmq:
+    build: ./rabbitmq
+    container_name: rabbitmq
+
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+
+  consumer_auditoria:
+    build: ./consumer_auditoria
+    container_name: consumer_auditoria
+
+    depends_on:
+      - rabbitmq
+
+
+  consumer_notificacao:
+    build: ./consumer_notificacao
+    container_name: consumer_notificacao
+
+    depends_on:
+      - rabbitmq
+
+
+  gateway:
+    build: ./gateway
+    container_name: api_gateway
+
+    depends_on:
+      - api_1
+      - api_2
+
+    ports:
+      - "8080:80"
+
+
+volumes:
+  postgres_data:  
