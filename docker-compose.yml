@@ -10,10 +10,36 @@ services:
       POSTGRES_PASSWORD: admin
 
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rabbitmq:
+    build: ./rabbitmq
+    container_name: rabbitmq
+
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
 
   api_1:
@@ -21,8 +47,10 @@ services:
     container_name: fastapi_api_1
 
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
     env_file:
       - ./backend/.env
@@ -36,8 +64,10 @@ services:
     container_name: fastapi_api_2
 
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
     env_file:
       - ./backend/.env
@@ -46,25 +76,13 @@ services:
       - "8000"
 
 
-  rabbitmq:
-    build: ./rabbitmq
-    container_name: rabbitmq
-
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-
-
   consumer_auditoria:
     build: ./consumer_auditoria
     container_name: consumer_auditoria
 
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
 
 
   consumer_notificacao:
@@ -72,7 +90,8 @@ services:
     container_name: consumer_notificacao
 
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
 
 
   gateway:
